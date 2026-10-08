@@ -31,4 +31,5 @@ jobs:
         with:
           name: giftfill-chrome
           path: .output/*-chrome.zip
+          include-hidden-files: true
           if-no-files-found: error

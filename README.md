@@ -1,5 +1,7 @@
 # GiftFill · 礼卡快填
 
+[![Build and test](https://github.com/Nitmi/giftfill/actions/workflows/ci.yml/badge.svg)](https://github.com/Nitmi/giftfill/actions/workflows/ci.yml)
+
 美区 Apple Gift Card 的 Chrome / Edge 扩展。保存常用金额、收发件邮箱、联系与账单资料，点击「一键开始」准备订单，停在付款信息页。当前版本 v0.3.0。
 
 [下载安装包](https://github.com/Nitmi/giftfill/releases/latest) · [更新记录](CHANGELOG.md) · [MIT 许可证](LICENSE)

@@ -2,14 +2,20 @@
 
 美区 Apple Gift Card 的 Chrome / Edge 扩展。保存常用金额、收发件邮箱、联系与账单资料，点击「一键开始」准备订单，停在付款信息页。当前版本 v0.3.0。
 
+[下载安装包](https://github.com/Nitmi/giftfill/releases/latest) · [更新记录](CHANGELOG.md) · [MIT 许可证](LICENSE)
+
+<img src="docs/assets/preview.png" width="360" alt="GiftFill 主界面预览，示例资料与一键开始按钮">
+
+图中是本地界面预览，使用示例资料；安装后「一键开始」可操作苹果官网。
+
 ## 安装与使用
 
 要求 Chrome 116+ 或支持 Side Panel 的当前 Edge。
 
-1. 解压发布包，在扩展管理页开启开发者模式，加载包内直接包含 `manifest.json` 的 `extension` 文件夹。
-2. 点击 GiftFill 图标，创建并保存一份资料；收发件姓名、邮箱须完整，账单信息填写实际资料。订单联系邮箱留空时使用发件邮箱。
-3. 选择资料并点击「一键开始」。扩展记住上次选择，之后日常只需点击这个按钮。
-4. 自动打开或使用当前窗口的 Apple 购买标签页，填写商品、Add to Bag、核对购物袋、Check Out、Continue as Guest，并填写联系与账单信息。
+1. 从 [Releases](https://github.com/Nitmi/giftfill/releases/latest) 下载 `GiftFill-0.3.0.zip` 并解压。
+2. 打开 `chrome://extensions` 或 `edge://extensions`，开启开发者模式，选择「加载已解压的扩展程序」，加载包内直接包含 `manifest.json` 的 `extension` 文件夹。
+3. 点击 GiftFill 图标，创建并保存一份资料；收发件姓名、邮箱须完整，账单信息填写实际资料。订单联系邮箱留空时使用发件邮箱。
+4. 选择资料并点击「一键开始」。扩展记住上次选择，之后日常只需点击这个按钮。自动打开或使用当前窗口的 Apple 购买标签页，填写商品、Add to Bag、核对购物袋、Check Out、Continue as Guest，并填写联系与账单信息。
 5. 在付款信息页，用浏览器或密码管理器填写银行卡，核对订单后自行继续和确认购买。
 
 编辑、复制、增删、导入与导出都收在「管理资料」中。首次没有资料时也能从这个入口导入备份。运行时保持面板打开；可以点击「停止」，已填入的内容保留。
@@ -32,7 +38,7 @@ v0.3.0 已删除付款卡库、解锁和银行卡自动填写功能。加载新�
 - 只允许 Add to Bag、Check Out、Continue as Guest，以及展开信用卡账单表单；付款页 Continue 与最终购买由用户操作。
 - 内容脚本仅匹配美区礼品卡商品、购物袋、访客入口和结账路线；不注入 iframe。额外检查 HTTPS、主机与路径。
 
-详细边界见 `docs/security.md`，验证范围见 `docs/validation.md`。
+详细边界见 [数据与操作边界](docs/security.md)，验证范围见 [验证记录](docs/validation.md)。项目独立开发，与 Apple 无隶属关系。当前通过 GitHub 提供安装包，未上架扩展商店。
 
 ## 开发
 
@@ -48,3 +54,5 @@ npm run zip
 自动测试覆盖字段识别、受控输入、金额异步确认、国家/ZIP/电话联动、导入格式、购物袋核对、允许的导航按钮、取消与重复点击防护，以及不读取或修改银行卡字段。
 
 源码主要为 `lib/profile.ts`（资料）、`lib/fill.ts`（填写）、`lib/assist.ts` 与 `lib/flow.ts`（导航）、`entrypoints/`（浏览器接入）和 `ui/`（界面）。使用 WXT，MIT 许可证；独立实现，未复制调研项目源码。
+
+GitHub Actions 自动检查类型、运行测试并构建扩展。欢迎通过 [Issues](https://github.com/Nitmi/giftfill/issues) 提交问题；反馈表单适配问题时，请提供浏览器版本、页面步骤和脱敏截图。

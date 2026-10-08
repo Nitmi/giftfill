@@ -3,6 +3,7 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   manifest: {
     name: 'GiftFill · 礼卡快填',
+    homepage_url: 'https://github.com/Nitmi/giftfill',
     description: '选择常用资料，一键准备美区 Apple Gift Card 订单，自动填写联系与账单信息，付款由你完成。',
     minimum_chrome_version: '116',
     permissions: ['storage', 'activeTab', 'sidePanel'],

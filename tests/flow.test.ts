@@ -3,6 +3,13 @@ import { runFlow,validTransition } from '../lib/flow';
 import type { PageKind } from '../lib/page';
 import type { AssistResult } from '../lib/assist';
 describe('assisted navigation boundaries',()=>{
+  it('waits for the content script handshake before acting',async()=>{
+    let reads=0;
+    const act=vi.fn(async(page:PageKind):Promise<AssistResult>=>({page,fields:[],status:'ready',message:'ready'}));
+    const wait=vi.fn(async()=>{});
+    await runFlow({read:async()=>({page:'checkout',ready:++reads===3}),act,wait,update:()=>{},cancelled:()=>false});
+    expect(wait).toHaveBeenCalledTimes(2);expect(act).toHaveBeenCalledOnce();
+  });
   it('advances only through bag and guest to checkout, each page once',async()=>{
     const pages:PageKind[]=['giftcard','bag','guest','checkout'];let index=0;
     const act=vi.fn(async(page:PageKind):Promise<AssistResult>=>{index++;return {page,fields:[],status:page==='checkout'?'ready':'advanced',message:page};});

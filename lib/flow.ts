@@ -14,7 +14,7 @@ const order:PageKind[]=['giftcard','bag','guest','checkout'];
 export function validTransition(from:PageKind,to:PageKind):boolean {
   return (from==='giftcard'&&to==='bag')||(from==='bag'&&(to==='guest'||to==='checkout'))||(from==='guest'&&to==='checkout');
 }
-// The panel owns the run. Closing it stops future steps; no run or card is stored.
+// The panel owns the run. Closing it stops future steps; no run is persisted.
 export async function runFlow(hooks:FlowHooks):Promise<AssistResult> {
   const wait=hooks.wait??(()=>new Promise(resolve=>setTimeout(resolve,500)));
   const deadline=Date.now()+(hooks.timeoutMs??120000);
@@ -27,7 +27,7 @@ export async function runFlow(hooks:FlowHooks):Promise<AssistResult> {
     if(target.page==='unsupported')return failure('目标标签页离开了购买流程，已停止');
     if(target.page===previous){await wait();continue;}
     if(previous&&!validTransition(previous,target.page))return failure('页面返回了先前步骤或出现未知跳转，请核对后重新开始');
-    if(!order.includes(target.page))return failure('当前页面不支持快捷结账');
+    if(!order.includes(target.page))return failure('当前页面不支持一键准备订单');
     previous=target.page;
     try {latest=await hooks.act(target.page);}
     catch {

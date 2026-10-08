@@ -40,6 +40,10 @@ const BILLING_RULES: Rule[] = [
 ];
 const COUNTRY_RULE: Rule = { key:'billingCountry', label:'账单国家 / 地区', names:['countryCode','country','billingCountry'], autocomplete:'country', labels:['Country/Region','Country / Region','Country'] };
 
+export function billingFormReady(doc:Document):boolean {
+  return !!findField(doc,COUNTRY_RULE)||!!findField(doc,BILLING_RULES[0]!);
+}
+
 function normalized(text: string): string { return text.trim().replace(/\s+/g,' ').toLowerCase(); }
 export function visible(element: Element): boolean {
   const el = element as HTMLElement;
@@ -65,7 +69,9 @@ function nameMatches(name: string, target: string): boolean {
   return name === target || name.endsWith('.'+target) || name.endsWith('_'+target);
 }
 function findField(doc: Document, rule: Rule, includeUnavailable = false): FormElement | null {
-  const candidates = Array.from(doc.querySelectorAll<FormElement>('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([type="password"]), textarea, select')).filter(includeUnavailable ? visible : editable);
+  const candidates = Array.from(doc.querySelectorAll<FormElement>('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([type="password"]), textarea, select'))
+    .filter(el=>!(el.autocomplete??'').split(/\s+/).some(token=>token.startsWith('cc-')))
+    .filter(includeUnavailable ? visible : editable);
   const strategies = [
     (el: FormElement) => rule.names.some(name => nameMatches(el.name, name)),
     (el: FormElement) => rule.names.includes(el.getAttribute('data-autom') ?? ''),

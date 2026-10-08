@@ -41,7 +41,7 @@ const BILLING_RULES: Rule[] = [
 const COUNTRY_RULE: Rule = { key:'billingCountry', label:'账单国家 / 地区', names:['countryCode','country','billingCountry'], autocomplete:'country', labels:['Country/Region','Country / Region','Country'] };
 
 function normalized(text: string): string { return text.trim().replace(/\s+/g,' ').toLowerCase(); }
-function visible(element: Element): boolean {
+export function visible(element: Element): boolean {
   const el = element as HTMLElement;
   if (el.closest('[hidden], [aria-hidden="true"]')) return false;
   const style = el.ownerDocument.defaultView!.getComputedStyle(el);
@@ -79,7 +79,7 @@ function findField(doc: Document, rule: Rule, includeUnavailable = false): FormE
   }
   return null;
 }
-async function changeValue(el: FormElement, value: string, commitAmount = false): Promise<void> {
+export async function changeValue(el: FormElement, value: string, commitAmount = false): Promise<void> {
   const view = el.ownerDocument.defaultView!;
   const prototype = el.tagName === 'SELECT' ? view.HTMLSelectElement.prototype
     : el.tagName === 'TEXTAREA' ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
@@ -101,7 +101,7 @@ async function changeValue(el: FormElement, value: string, commitAmount = false)
   if (!el.isConnected) return;
   el.blur();
 }
-async function until<T>(read: () => T | null | false, timeout: number): Promise<T | null> {
+export async function until<T>(read: () => T | null | false, timeout: number): Promise<T | null> {
   const end = Date.now() + timeout;
   do {
     const value = read();
@@ -304,7 +304,10 @@ export async function fillPage(profile: Profile, options: FillOptions, doc: Docu
     const el=await until(()=>findField(doc,rule), timeout);
     if (!el) {
       const combined=(rule.key==='city'||rule.key==='state')?await fillCombinedCityState(doc,profile,options.overwrite,Math.min(timeout,1500)):null;
-      if(combined){result.fields.push(...combined);continue;}
+      if(combined){
+        for(const field of combined){const existing=result.fields.find(item=>item.key===field.key);if(existing)Object.assign(existing,field);else result.fields.push(field);}
+        continue;
+      }
       result.fields.push({key:rule.key,label:rule.label,status:'missing'});continue;
     }
     previous.set(rule.key,el.value);

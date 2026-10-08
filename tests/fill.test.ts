@@ -176,4 +176,13 @@ describe('Apple form filling',()=>{
     // A failed structural selection must not start writing address fields.
     expect(input('street').value).toBe('');
   });
+  it('merges City/State results when the ZIP dropdown arrives after the city lookup',async()=>{
+    document.body.innerHTML='<select name="countryCode"><option value="US">United States</option></select>';
+    setTimeout(()=>document.body.insertAdjacentHTML('beforeend','<select name="zipLookupCityState"><option value="">Choose</option><option value="cupertino-ca">Cupertino, CA</option></select>'),220);
+    const info={...newProfile(),name:'Delayed city',city:'Cupertino',state:'CA'};
+    const result=await fillPage(info,{overwrite:true,timeoutMs:150},document,'checkout');
+    expect(result.fields.filter(field=>field.key==='city')).toHaveLength(1);
+    expect(result.fields.filter(field=>field.key==='state')).toHaveLength(1);
+    expect(result.fields.filter(field=>['city','state'].includes(field.key)).every(field=>field.status==='filled')).toBe(true);
+  });
 });

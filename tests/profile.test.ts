@@ -20,6 +20,8 @@ describe('profile boundaries',()=>{
   it('only targets the US Apple purchase and secure Apple checkout URLs',()=>{
     expect(classifyPage('https://www.apple.com/shop/buy-giftcard/giftcard/25-dollars')).toBe('giftcard');
     expect(classifyPage('https://secure7.store.apple.com/shop/checkout?_s=abc')).toBe('checkout');
-    for(const url of ['https://www.apple.com.evil.test/shop/buy-giftcard/giftcard','https://evil.test/store.apple.com/shop/checkout','http://www.apple.com/shop/buy-giftcard/giftcard','https://www.apple.com/jp/shop/buy-giftcard/giftcard','https://www.apple.com/shop/buy-iphone/iphone']) expect(classifyPage(url)).toBe('unsupported');
+    expect(classifyPage('https://www.apple.com/shop/bag')).toBe('bag');
+    expect(classifyPage('https://secure7.store.apple.com/shop/signIn')).toBe('guest');
+    for(const url of ['https://www.apple.com.evil.test/shop/buy-giftcard/giftcard','https://evil.test/store.apple.com/shop/checkout','http://www.apple.com/shop/buy-giftcard/giftcard','https://www.apple.com/jp/shop/buy-giftcard/giftcard','https://www.apple.com/shop/buy-iphone/iphone','https://secure7.store.apple.com:444/shop/checkout','https://user@secure7.store.apple.com/shop/checkout','https://secure7.store.apple.com/shop/signIn/other']) expect(classifyPage(url)).toBe('unsupported');
   });
 });

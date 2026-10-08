@@ -3,6 +3,9 @@ import { loadStore, saveStore, watchStore } from '../lib/storage';
 import { newProfile, validateProfile, parseImport, escapeHtml, PROFILE_FIELDS, type Profile, type ProfileField, type ProfileStore } from '../lib/profile';
 import { APPLE_GIFTCARD_URL, classifyPage, type PageKind } from '../lib/page';
 import { COUNTRIES, type FillResult } from '../lib/fill';
+import { createVaultPanel } from './vault-panel';
+import { runFlow } from '../lib/flow';
+import type { AssistResult } from '../lib/assist';
 
 const icon = (name:string) => {
   const paths:Record<string,string>={
@@ -40,6 +43,8 @@ export async function mountApp(root:HTMLElement):Promise<void> {
   let page:PageKind='unsupported';
   let status='打开美区 Apple Gift Card 购买页开始';
   let noticeTimer:ReturnType<typeof setTimeout>|undefined;
+  let flowMessage='';let flowRunning=false;let flowCancelled=false;let flowTarget:number|undefined;
+  const vault=await createVaultPanel(()=>{if(!draft)render();});
 
   const persist=async()=>{await saveStore(store);};
   function showNotice(message:string) {
@@ -56,25 +61,27 @@ export async function mountApp(root:HTMLElement):Promise<void> {
       const tabs=await extension!.tabs.query({active:true,currentWindow:true});
       const tab=tabs[0]; tabId=tab?.id;
       page=classifyPage(tab?.url??'');
-      status=page==='giftcard'?'已连接 · 礼品卡商品页':page==='checkout'?'已连接 · Apple 结账页':'打开美区 Apple Gift Card 购买页开始';
+      status=page==='unsupported'?'打开美区 Apple Gift Card 购买页开始':`已连接 · ${{giftcard:'礼品卡商品页',bag:'Apple 购物袋',guest:'访客结账',checkout:'Apple 结账页'}[page]}`;
     } catch { page='unsupported';status='切换到苹果页面后再试'; }
     updateContext();
   }
   function updateContext() {
     const ctx=root.querySelector<HTMLElement>('#page-status');
     if (ctx) { ctx.classList.toggle('connected',page!=='unsupported');ctx.textContent=status; }
-    root.querySelectorAll<HTMLButtonElement>('[data-fill]').forEach(button=>{button.disabled=busy||page==='unsupported';});
+    root.querySelectorAll<HTMLButtonElement>('[data-fill]').forEach(button=>{button.disabled=busy||!['giftcard','checkout'].includes(page);});
+    const flowButton=root.querySelector<HTMLButtonElement>('#start-flow');if(flowButton)flowButton.disabled=busy||page==='unsupported';
+    root.querySelectorAll<HTMLButtonElement>('[data-select],[data-edit],[data-copy],#new-profile,#import,#manage').forEach(button=>{button.disabled=busy;});
   }
   function render() {
     root.innerHTML=`<div class="shell">
       <header class="brand"><span class="brand-mark">${icon('gift')}</span><div><span class="brand-name">GiftFill</span><span class="brand-subtitle">礼卡快填</span></div><span class="store-badge">US STORE</span></header>
       <div id="notice" class="notice" role="status" ${notice?'':'hidden'}>${e(notice)}</div>
       ${draft?renderEditor():renderProfiles()}
-      <footer>${icon('lock')}<span>资料保存在此浏览器 · 填写后请核对</span><span class="version">v0.1.1</span></footer>
+      <footer>${icon('lock')}<span>资料保存在此浏览器 · 付款由你确认</span><span class="version">v0.2.0</span></footer>
       <input id="import-file" type="file" accept=".json,application/json" hidden>
     </div>`;
     bindCommon();
-    if (draft) bindEditor(); else bindProfiles();
+    if (draft) bindEditor(); else {bindProfiles();vault.bind(root,store.selectedId);}
     updateContext();
   }
   function renderProfiles():string {
@@ -90,13 +97,15 @@ export async function mountApp(root:HTMLElement):Promise<void> {
       <div class="section-title"><div><h1>常用资料</h1><p>${store.profiles.length?'选一份资料，填好当前页面。':'把每次重复的信息，保存一次。'}</p></div><button id="new-profile" class="add-button" aria-label="新增资料">${icon('plus')}</button></div>
       ${store.profiles.length?`<div class="profile-list">${cards}</div><label class="overwrite"><input id="overwrite" type="checkbox" ${overwrites?'checked':''}><span>替换页面中已有的联系信息</span></label><p class="fill-hint">金额和账单国家按资料选择。${overwrites?'已有联系信息将被替换。':'已有联系信息会保留。'}</p>`:
         `<div class="empty-state"><span class="empty-graphic">${icon('gift')}</span><h2>下一次，少填一些</h2><p>金额、收发件邮箱、电话与账单地址，<br>都放进一份常用资料。</p><button id="first-profile" class="primary-button">${icon('plus')}创建第一份资料</button></div>`}
+      ${vault.render(store.selectedId)}
+      ${store.profiles.length?`<section class="flow-panel"><div><strong>快捷结账</strong><span>填资料 → 加入购物袋 → 访客结账</span></div><p>使用已选资料${vault.session.snapshot?.cards.find(card=>card.id===vault.session.snapshot?.bindings[store.selectedId??''])?`和绑定卡片`:'，银行卡可由浏览器填写'}。停在付款信息页；CVV 与后续确认由你完成。</p>${flowRunning?`<button id="stop-flow" class="secondary-button">停止快捷流程</button>`:`<button id="start-flow" class="primary-button">${icon('arrow')}快捷结账 · $${e(store.profiles.find(profile=>profile.id===store.selectedId)?.amount??'')}</button>`}${flowMessage?`<p id="flow-message" role="status">${e(flowMessage)}</p>`:''}</section>`:''}
       ${renderResult()}
       <div class="data-toolbar"><button id="import" class="text-button">${icon('upload')}导入资料</button><button id="export" class="text-button" ${store.profiles.length?'':'disabled'}>${icon('download')}导出备份</button>${!isPreview?`<button id="manage" class="text-button">资料管理 ${icon('link')}</button>`:''}</div>
       <p class="backup-note" id="backup-note" hidden>备份包含邮箱、电话和地址，请妥善保存。</p>`;
   }
   function renderResult():string {
     if (!result && !busy) return '';
-    if (busy) return `<section class="result-panel" aria-live="polite"><span class="spinner"></span><strong>正在填写并核对…</strong><p>等待页面字段准备好，请稍候。</p></section>`;
+    if (busy) return `<section class="result-panel" aria-live="polite"><span class="spinner"></span><strong>${flowRunning?'正在执行快捷流程…':'正在填写并核对…'}</strong><p>${flowRunning?'保持面板打开，可随时停止。':'等待页面字段准备好，请稍候。'}</p></section>`;
     if (result!.error) return `<section class="result-panel warning" aria-live="polite"><strong>需要处理一步</strong><p>${e(result!.error)}</p></section>`;
     const filled=result!.fields.filter(field=>field.status==='filled').length;
     const unfinished=result!.fields.filter(field=>field.status==='failed'||field.status==='missing').length;
@@ -154,6 +163,8 @@ export async function mountApp(root:HTMLElement):Promise<void> {
     root.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach(button=>button.addEventListener('click',()=>edit(store.profiles.find(profile=>profile.id===button.dataset.edit))));
     root.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach(button=>button.addEventListener('click',()=>{const original=store.profiles.find(profile=>profile.id===button.dataset.copy)!;edit({...original,id:crypto.randomUUID(),name:original.name+' · 副本'});dirty=true;}));
     root.querySelectorAll<HTMLButtonElement>('[data-fill]').forEach(button=>button.addEventListener('click',()=>{void fill(button.dataset.fill!);}));
+    root.querySelector('#start-flow')?.addEventListener('click',()=>{void startFlow();});
+    root.querySelector('#stop-flow')?.addEventListener('click',()=>{flowCancelled=true;flowMessage='正在停止…';if(flowTarget!==undefined)void extension!.tabs.sendMessage(flowTarget,{type:'GIFTFILL_STOP'}).catch(()=>{});render();});
     root.querySelector('#import')?.addEventListener('click',()=>root.querySelector<HTMLInputElement>('#import-file')!.click());
     root.querySelector('#export')?.addEventListener('click',()=> {
       const backup={app:'giftfill',version:1,exportedAt:new Date().toISOString(),profiles:store.profiles};
@@ -200,13 +211,40 @@ export async function mountApp(root:HTMLElement):Promise<void> {
   }
   async function fill(id:string) {
     if(busy||isPreview)return;
-    await refreshPage();if(page==='unsupported'||tabId===undefined){showNotice('请先切换到苹果购买页或结账页');return;}
+    await refreshPage();if(busy)return;if(page==='unsupported'||tabId===undefined){showNotice('请先切换到苹果购买页或结账页');return;}
     const profile=store.profiles.find(item=>item.id===id);if(!profile)return;
     busy=true;result=null;store.selectedId=id;
     const target=tabId;
-    try{await persist();render();result=await extension!.tabs.sendMessage(target,{type:'GIFTFILL_FILL',profile,overwrite:overwrites});}
+    try{await persist();render();if(page==='checkout'){
+      const response=await extension!.tabs.sendMessage(target,{type:'GIFTFILL_ASSIST',expectedPage:page,profile,overwrite:overwrites,navigate:false,card:vault.session.card(id)}) as AssistResult;
+      result=response;flowMessage=response.message??'';
+    }else result=await extension!.tabs.sendMessage(target,{type:'GIFTFILL_FILL',profile,overwrite:overwrites});}
     catch{result={page,fields:[],error:'页面尚未连接。安装或更新扩展后，请刷新苹果页面再试。'};}
     finally{busy=false;render();}
+  }
+  async function startFlow(){
+    if(busy||isPreview)return;await refreshPage();if(busy)return;
+    const source=store.profiles.find(item=>item.id===store.selectedId);if(!source||tabId===undefined||page==='unsupported')return;
+    const profile={...source};const target=tabId;const replace=overwrites;
+    const cardId=vault.session.snapshot?.bindings[profile.id];
+    const runId=crypto.randomUUID();busy=true;flowRunning=true;flowCancelled=false;flowTarget=target;result=null;flowMessage='正在核对所选资料…';render();
+    try{
+      result=await runFlow({
+        read:async()=>{const tab=await extension!.tabs.get(target);return {page:classifyPage(tab.url??''),ready:tab.status==='complete'};},
+        cancelled:()=>flowCancelled,
+        update:message=>{flowMessage=message;render();},
+        act:async currentPage=>{
+          if(flowCancelled)throw new Error('cancelled');
+          const port=extension!.tabs.connect(target,{name:'giftfill-run'});
+          try{
+            const card=currentPage==='checkout'?vault.session.card(profile.id):undefined;
+            return await extension!.tabs.sendMessage(target,{type:'GIFTFILL_ASSIST',expectedPage:currentPage,profile,overwrite:replace,navigate:true,runId,card:card?.id===cardId?card:undefined});
+          }finally{port.disconnect();}
+        },
+      });
+      flowMessage=(result as AssistResult).message;
+    }catch{result={page,fields:[],error:'目标标签页已关闭或未连接，请刷新苹果页面后重试。'};flowMessage='快捷流程已停止';}
+    finally{busy=false;flowRunning=false;flowTarget=undefined;render();}
   }
   render();await refreshPage();
   watchStore(()=>{if(!draft&&!busy)void loadStore().then(updated=>{store=updated;render();});});

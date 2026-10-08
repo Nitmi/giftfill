@@ -47,6 +47,65 @@ describe('Apple form filling',()=>{
     expect(input('fromEmail').value).toBe('sender@example.com');
     expect(input('hiddenTrap').value).toBe('');
   });
+  it('commits custom amount after React updates and waits for delivery fields to unlock',async()=>{
+    giftFixture();
+    const original=document.querySelector<HTMLInputElement>('#dynamic-other')!;
+    const amount=original.cloneNode(true) as HTMLInputElement;
+    original.replaceWith(amount);
+    let committed='';
+    amount.addEventListener('input',event=>{
+      if(!event.composed)return;
+      setTimeout(()=>{committed=amount.value;amount.setAttribute('value',committed);},200);
+    });
+    amount.addEventListener('blur',()=>{
+      if(committed!==amount.value){amount.value='';return;}
+      setTimeout(()=>document.querySelectorAll<HTMLInputElement>('[name="toName"],[name="toEmail"],[name="fromName"],[name="fromEmail"]').forEach(el=>{el.disabled=false;}),1500);
+    });
+    const result=await fillPage(profile(),{overwrite:false,timeoutMs:2500},document,'giftcard');
+    expect(amount.value).toBe('20');
+    expect(result.fields.every(field=>field.status==='filled')).toBe(true);
+    expect(input('toEmail').value).toBe('recipient@example.com');
+  });
+  it('reports disabled delivery fields as an unconfirmed amount instead of missing fields',async()=>{
+    giftFixture();
+    const original=document.querySelector<HTMLInputElement>('#dynamic-other')!;
+    original.replaceWith(original.cloneNode(true));
+    const result=await fillPage(profile(),{overwrite:false,timeoutMs:200},document,'giftcard');
+    expect(result.fields.find(field=>field.key==='amount')?.status).toBe('failed');
+    expect(result.fields.filter(field=>['recipientName','recipientEmail','senderName','senderEmail'].includes(field.key)).every(field=>field.status==='failed'&&field.detail?.includes('尚未启用'))).toBe(true);
+  });
+  it('triggers the keyboard price formatter and waits for its delayed confirmed amount',async()=>{
+    giftFixture();
+    const original=document.querySelector<HTMLInputElement>('#dynamic-other')!;
+    const amount=original.cloneNode(true) as HTMLInputElement;
+    original.replaceWith(amount);
+    let confirmed='25';
+    const formatter=vi.fn((event:KeyboardEvent)=>{
+      if(event.key!=='End')return;
+      const next=amount.value;
+      setTimeout(()=>{
+        confirmed=next;
+        document.querySelectorAll<HTMLInputElement>('[name="toName"],[name="toEmail"],[name="fromName"],[name="fromEmail"]').forEach(el=>{el.disabled=false;});
+      },600);
+    });
+    amount.addEventListener('keydown',event=>formatter(event));
+    amount.addEventListener('blur',()=>{amount.value=confirmed;});
+    const result=await fillPage(profile(),{overwrite:true,timeoutMs:1500},document,'giftcard');
+    expect(formatter).toHaveBeenCalledOnce();
+    expect(amount.value).toBe('20');
+    expect(result.fields.every(field=>field.status==='filled')).toBe(true);
+  });
+  it('uses Apple data-autom identifiers when field names and labels differ',async()=>{
+    giftFixture();
+    const keys=['toName','toEmail','fromName','fromEmail'];
+    document.querySelector<HTMLInputElement>('[name="dimensionGiftCardType"]')!.click();
+    document.querySelectorAll<HTMLInputElement>('[name="giftcard-amount"]').forEach(el=>{el.disabled=false;});
+    document.querySelector<HTMLInputElement>('[name="giftcard-amount"][value="25"]')!.click();
+    for(const key of keys){const el=input(key);el.dataset.autom=key;el.name='';el.disabled=false;}
+    const result=await fillPage({...profile(),amount:'25'},{overwrite:true,timeoutMs:1000},document,'giftcard');
+    expect(result.fields.every(field=>field.status==='filled')).toBe(true);
+    expect(document.querySelector<HTMLInputElement>('[data-autom="toEmail"]')!.value).toBe('recipient@example.com');
+  });
   it('supports a preset and preserves user edits unless replacement is requested',async()=>{
     giftFixture();
     input('toEmail').value='manual@example.com';

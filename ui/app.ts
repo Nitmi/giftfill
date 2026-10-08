@@ -70,7 +70,7 @@ export async function mountApp(root:HTMLElement):Promise<void> {
       <header class="brand"><span class="brand-mark">${icon('gift')}</span><div><span class="brand-name">GiftFill</span><span class="brand-subtitle">礼卡快填</span></div><span class="store-badge">US STORE</span></header>
       <div id="notice" class="notice" role="status" ${notice?'':'hidden'}>${e(notice)}</div>
       ${draft?renderEditor():renderProfiles()}
-      <footer>${icon('lock')}<span>资料保存在此浏览器 · 填写后请核对</span><span class="version">v0.1</span></footer>
+      <footer>${icon('lock')}<span>资料保存在此浏览器 · 填写后请核对</span><span class="version">v0.1.1</span></footer>
       <input id="import-file" type="file" accept=".json,application/json" hidden>
     </div>`;
     bindCommon();

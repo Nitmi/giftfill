@@ -64,10 +64,11 @@ function labelsFor(el: Element): string[] {
 function nameMatches(name: string, target: string): boolean {
   return name === target || name.endsWith('.'+target) || name.endsWith('_'+target);
 }
-function findField(doc: Document, rule: Rule): FormElement | null {
-  const candidates = Array.from(doc.querySelectorAll<FormElement>('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([type="password"]), textarea, select')).filter(editable);
+function findField(doc: Document, rule: Rule, includeUnavailable = false): FormElement | null {
+  const candidates = Array.from(doc.querySelectorAll<FormElement>('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([type="password"]), textarea, select')).filter(includeUnavailable ? visible : editable);
   const strategies = [
     (el: FormElement) => rule.names.some(name => nameMatches(el.name, name)),
+    (el: FormElement) => rule.names.includes(el.getAttribute('data-autom') ?? ''),
     (el: FormElement) => !!rule.autocomplete && (el.autocomplete ?? '').split(/\s+/).includes(rule.autocomplete),
     (el: FormElement) => !!rule.labels?.some(label => labelsFor(el).includes(normalized(label))),
   ];
@@ -78,14 +79,26 @@ function findField(doc: Document, rule: Rule): FormElement | null {
   }
   return null;
 }
-function changeValue(el: FormElement, value: string): void {
+async function changeValue(el: FormElement, value: string, commitAmount = false): Promise<void> {
   const view = el.ownerDocument.defaultView!;
   const prototype = el.tagName === 'SELECT' ? view.HTMLSelectElement.prototype
     : el.tagName === 'TEXTAREA' ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
   el.focus();
+  // Apple uses focus and input to update React state. Blurring in the same
+  // JavaScript task submits the previous render's value, especially for amount.
+  await new Promise(resolve => setTimeout(resolve, 80));
+  if (!el.isConnected) return;
   Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(el, value);
-  el.dispatchEvent(new view.InputEvent('input', { bubbles:true, inputType:'insertText', data:value }));
-  el.dispatchEvent(new view.Event('change', { bubbles:true }));
+  el.dispatchEvent(new view.InputEvent('input', { bubbles:true, composed:true, inputType:'insertText', data:value }));
+  el.dispatchEvent(new view.Event('change', { bubbles:true, composed:true }));
+  if (commitAmount) {
+    // Apple starts its debounced price formatter from keydown, not input/change.
+    // A navigation key invokes that handler without inserting text or submitting.
+    el.dispatchEvent(new view.KeyboardEvent('keydown', {bubbles:true,composed:true,cancelable:true,key:'End',code:'End',keyCode:35,which:35}));
+    el.dispatchEvent(new view.KeyboardEvent('keyup', {bubbles:true,composed:true,key:'End',code:'End',keyCode:35,which:35}));
+    await new Promise(resolve => setTimeout(resolve, 300));
+  } else await new Promise(resolve => setTimeout(resolve, 80));
+  if (!el.isConnected) return;
   el.blur();
 }
 async function until<T>(read: () => T | null | false, timeout: number): Promise<T | null> {
@@ -136,7 +149,7 @@ async function fillCombinedCityState(doc:Document, profile:Profile, overwrite:bo
   if(!overwrite&&el.value.trim())return outcomes('preserved','保留页面已有的城市与州');
   if(el.tagName==='SELECT'){
     const option=Array.from((el as HTMLSelectElement).options).find(opt=>!opt.disabled&&cityStateMatches(opt.textContent??'',profile));
-    if(option){changeValue(el,option.value);return outcomes('filled');}
+    if(option){await changeValue(el,option.value);return outcomes('filled');}
   }else if(el.getAttribute('role')==='combobox'){
     el.focus();el.click();
     const option=await until(()=>{
@@ -153,13 +166,13 @@ async function assign(el: FormElement, value: string, key: keyof Profile, timeou
   if (el.tagName === 'SELECT') {
     const option = Array.from((el as HTMLSelectElement).options).find(opt => !opt.disabled && (accepted.includes(normalized(opt.value)) || accepted.includes(normalized(opt.textContent ?? ''))));
     if (!option) return false;
-    changeValue(el, option.value);
+    await changeValue(el, option.value);
     return true;
   }
   if (el.getAttribute('role') === 'combobox') {
     if (elementMatchesValue(el,value,key)) return true;
     const originalValue=el.value;
-    changeValue(el, '');
+    await changeValue(el, '');
     el.focus(); el.click();
     const target = await until(() => {
       const listId = el.getAttribute('aria-controls') ?? (el.id ? el.id+'_listbox' : '');
@@ -169,11 +182,11 @@ async function assign(el: FormElement, value: string, key: keyof Profile, timeou
       return Array.from(scope.querySelectorAll<HTMLElement>('[role="option"]')).filter(visible)
         .find(option => accepted.includes(normalized(option.textContent ?? '')) || accepted.includes(normalized(option.getAttribute('data-value') ?? ''))) ?? null;
     },timeout);
-    if (!target) { changeValue(el,originalValue); return false; }
+    if (!target) { await changeValue(el,originalValue); return false; }
     target.click();
     return true;
   }
-  changeValue(el,value);
+  await changeValue(el,value);
   return true;
 }
 
@@ -207,12 +220,18 @@ async function fillAmount(doc: Document, amount: string, timeout: number): Promi
   const rule: Rule = { key:'amount', label:'礼品卡金额', names:['customAmount','otherAmount','giftCardAmount'], labels:['Other Amount','Amount'], autocomplete:undefined };
   const input = await until(()=>findField(doc,rule),timeout);
   if (!input) { result.detail='未找到自定义金额输入框'; return result; }
-  changeValue(input,amount);
+  await changeValue(input,amount,true);
   await new Promise(resolve=>setTimeout(resolve,160));
   // Some Apple variants commit the custom amount by replacing the current form.
   const committed = await until(()=> {
     const current = findField(doc,rule);
-    if (current && Number(current.value) === number) return true;
+    // Blur renders the formatter's confirmed amount. Revisit it while the
+    // response is pending, so a previous valid amount cannot count as success.
+    if (current) {
+      current.focus();
+      current.blur();
+      if (Number(current.value) === number && current.validity.valid && current.getAttribute('aria-invalid') !== 'true') return true;
+    }
     const checked = doc.querySelector<HTMLInputElement>('input[name="giftcard-amount"]:checked');
     if (checked && (Number(checked.value) === number || labelsFor(checked).some(label=>Number(label.replace(/[$,\s]/g,''))===number))) return true;
     const title = doc.querySelector('h1')?.textContent ?? '';
@@ -241,6 +260,23 @@ export async function fillPage(profile: Profile, options: FillOptions, doc: Docu
     result.fields.push(await fillAmount(doc,profile.amount,timeout));
     if (result.fields.at(-1)?.status !== 'filled') return result;
     activeRules=GIFT_RULES;
+    const ready = await until(() => GIFT_RULES.every(rule => findField(doc, rule)) ? true : null, options.timeoutMs ?? 8000);
+    if (!ready) {
+      const amount = result.fields.find(field => field.key === 'amount')!;
+      const blocked = GIFT_RULES.some(rule => {
+        const el = findField(doc, rule, true);
+        return el && !editable(el);
+      });
+      if (blocked) {
+        amount.status = 'failed';
+        amount.detail = '苹果尚未确认金额，收发件输入框仍被禁用；请在金额框确认后重试';
+      }
+      for (const rule of GIFT_RULES.filter(rule => profile[rule.key])) {
+        const el = findField(doc, rule, true);
+        result.fields.push({key:rule.key,label:rule.label,status:el?'failed':'missing',detail:el?'输入框尚未启用，等待苹果确认金额':'未识别此字段'});
+      }
+      return result;
+    }
   } else {
     const existingAddress = findField(doc,COUNTRY_RULE) || findField(doc,BILLING_RULES[0]!);
     if (!existingAddress) {
@@ -265,7 +301,7 @@ export async function fillPage(profile: Profile, options: FillOptions, doc: Docu
   const preserved = new Set<string>();
   for (const rule of candidates) {
     if((rule.key==='city'||rule.key==='state')&&result.fields.some(field=>field.key===rule.key))continue;
-    const el=await until(()=>findField(doc,rule), Math.min(timeout,1200));
+    const el=await until(()=>findField(doc,rule), timeout);
     if (!el) {
       const combined=(rule.key==='city'||rule.key==='state')?await fillCombinedCityState(doc,profile,options.overwrite,Math.min(timeout,1500)):null;
       if(combined){result.fields.push(...combined);continue;}
